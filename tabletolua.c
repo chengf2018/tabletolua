@@ -90,17 +90,28 @@ clean_ctx(struct convert_ctx* ctx) {
 }
 
 static void
+tostringvalue(lua_State *L, struct convert_ctx* ctx, int index) {
+    if (lua_type(L, intdex) == LUA_TTABLE) {
+        travrse_table(L, ctx, index);
+        return;
+    }
+}
+
+static void
 travrse_table(lua_State *L, struct convert_ctx* ctx, int index) {
+    int i = 1, first = 0;
     lua_pushnil(L);
-    int i = 1;
     while (lua_next(L, index)) {
         //-1value -2key
-        int value_type = lua_type(L, -2);
-        if (value_type == LUA_TNUMBER) {
-            if (lua_tonumber(L, -2) == i) {
-                add_string(ctx, ",");
-                i++;
-            }
+        const char* sign = ",";
+        if (!first) {
+            first = 1;
+            sign = "";
+        }
+        if (lua_isinteger(L, -2) && lua_tointeger(L, -2) == i) {
+            add_string(ctx, sign);
+            tostringvalue(L, ctx, -1);
+            i++;
         } else {
 
         }
