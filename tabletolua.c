@@ -58,6 +58,17 @@ add_string(struct convert_ctx* ctx, const char* str) {
 }
 
 static void
+add_char(struct convert_ctx* ctx, char c) {
+    if (!c) return;
+    if (ctx->now_page->size + 1 > STR_BUFF_SIZE) {
+        ctx->now_page = ctx->now_page->next = alloc_str_page();
+    }
+    ctx->now_page->buff[ctx->now_page->size] = c;
+    ctx->now_page->size += 1;
+    ctx->total_len += 1;
+}
+
+static void
 build_string(struct convert_ctx* ctx) {
     if (ctx->total_len < STR_BUFF_SIZE) {
         ctx->build_str = ctx->first_page.buff;
@@ -88,36 +99,113 @@ clean_ctx(struct convert_ctx* ctx) {
     ctx->first_page.size = 0;
     ctx->first_page.next = NULL;
 }
+/*
+['\"'] = "\\\"",
+['\t'] = "\\t",
+['\n'] = "\\n",
+['\a'] = "\\a",
+['\b'] = "\\b",
+['\f'] = "\\f",
+['\r'] = "\\r",
+['\v'] = "\\v",
+['\\'] = "\\\\",
+['\''] = "\\\'",
+*/
+static void trans2escapechar(struct convert_ctx* ctx, const char* str, size_t len) {
+    size_t i;
+    for (i=0; i<len; i++) {
+        char c = str[i];
+        switch (c) {
+            case '\"':
+            add_string(ctx, "\\\"");
+            break;
+            case '\t':
+            add_string(ctx, "\\t");
+            break;
+            case '\n':
+            add_string(ctx, "\\n");
+            break;
+            case '\a':
+            add_string(ctx, "\\a");
+            break;
+            case '\b':
+            add_string(ctx, "\\b");
+            break;
+            case '\f':
+            add_string(ctx, "\\f");
+            break;
+            case '\r':
+            add_string(ctx, "\\r");
+            break;
+            case '\v':
+            add_string(ctx, "\\v");
+            break;
+            case '\\':
+            add_string(ctx, "\\\\");
+            break;
+            case '\'':
+            add_string(ctx, "\\\'");
+            break;
+            default:
+            add_char(ctx, c);
+            break;
+        }
+    }
+}
 
 static void
 tostringvalue(lua_State *L, struct convert_ctx* ctx, int index) {
-    if (lua_type(L, intdex) == LUA_TTABLE) {
+    int type = lua_type(L, index);
+    if (type == LUA_TTABLE) {
         travrse_table(L, ctx, index);
-        return;
+    } else if (type == LUA_TSTRING) {
+        add_char(ctx, '\"');
+        size_t len = 0;
+        const char* str = lua_tolstring(L, index, &len);
+        trans2escapechar(ctx, str, len);
+        add_char(ctx, '\"');
+    } else if (type == LUA_TNUMBER) {
+        add_string(ctx, lua_tostring(L, index));
+    } else if (type == LUA_TBOOLEAN) {
+        if (lua_toboolean(L, index))
+            add_string(ctx, "true");
+        else
+            add_string(ctx, "false");
     }
 }
 
 static void
 travrse_table(lua_State *L, struct convert_ctx* ctx, int index) {
     int i = 1, first = 0;
+    add_char(ctx, '{');
     lua_pushnil(L);
     while (lua_next(L, index)) {
         //-1value -2key
-        const char* sign = ",";
+        char comma = ',';
         if (!first) {
             first = 1;
-            sign = "";
+            comma = 0;
         }
         if (lua_isinteger(L, -2) && lua_tointeger(L, -2) == i) {
-            add_string(ctx, sign);
+            add_char(ctx, comma);
             tostringvalue(L, ctx, -1);
             i++;
-        } else {
-
+        } else if (lua_type(L, -2) == LUA_TNUMBER){
+            add_char(ctx, comma);
+            add_char(ctx, '[');
+            add_string(ctx, lua_tostring(L, -2));
+            add_string(ctx, "]=");
+            tostringvalue(L, ctx, -1);
+        } else if (lua_type(L, -2) == LUA_TSTRING) {
+            add_char(ctx, comma);
+            add_string(ctx, lua_tostring(L, -2));
+            add_char(ctx, '=');
+            tostringvalue(L, ctx, -1);
         }
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
+    add_char(ctx, '}');
 }
 
 static int
@@ -127,29 +215,13 @@ lt2ls(lua_State *L) {
     memset(&ctx, 0, sizeof(ctx));
     ctx.now_page = (struct str_page*)&ctx.first_page;
 
-
-    /*
-    struct convert_ctx ctx;
-    memset(&ctx, 0, sizeof(ctx));
-    ctx.now_page = (struct str_page*)&ctx.first_page;
-
-    add_string(&ctx, "[", 1);
-    const char* str = "--123456789abcdefghijklmnopqrstuvwxyz--";
-    add_string(&ctx, str, strlen(str));
-    add_string(&ctx, str, strlen(str));
-    add_string(&ctx, str, strlen(str));
-    add_string(&ctx, str, strlen(str));
-    add_string(&ctx, "]", 1);
-
+    travrse_table(L, &ctx, 1);
     build_string(&ctx);
 
-    printf("build_string len:%lu\n", ctx.total_len);
-    printf(ctx.build_str);
+    lua_pushstring(L, ctx->build_str);
 
-    clean_ctx(&ctx);*/
-
-
-    return 0;
+    clean_ctx(&ctx);
+    return 1;
 };
 
 
