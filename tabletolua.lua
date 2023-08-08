@@ -1,4 +1,6 @@
 local _M = { }
+local string_char = string.char
+local string_byte = string.byte
 local trans_char = {
 	['\"'] = "\\\"",
 	['\t'] = "\\t",
@@ -14,20 +16,21 @@ local trans_char = {
 local function trans2escapechar(str)
 	local newstr = ""
 	for i=1, #str do
-		local c = str[i]
+		local c = string_char(string_byte(str, i))
 		if trans_char[c] then
 			newstr = newstr .. trans_char[c]
 		else
 			newstr = newstr .. c
 		end
 	end
+	return newstr
 end
 
 local function tostringvalue(value)
 	if type(value) == "table" then
 		return _M.tabletostr(value)
 	elseif type(value) == "string" then
-		return "\"" .. value .. "\""
+		return "\"" .. trans2escapechar(value) .. "\""
 	end
 	return tostring(value)
 end

@@ -82,7 +82,7 @@ build_string(struct convert_ctx* ctx) {
         pos += p->size;
         p = p->next;
     } while (p);
-    str[pos] = 0;
+    str[pos] = '\0';
     ctx->build_str = str;
 }
 
@@ -100,17 +100,19 @@ clean_ctx(struct convert_ctx* ctx) {
     ctx->first_page.next = NULL;
 }
 /*
-['\"'] = "\\\"",
-['\t'] = "\\t",
-['\n'] = "\\n",
-['\a'] = "\\a",
-['\b'] = "\\b",
-['\f'] = "\\f",
-['\r'] = "\\r",
-['\v'] = "\\v",
-['\\'] = "\\\\",
-['\''] = "\\\'",
+\"
+\t'
+\n
+\a
+\b
+\f
+\r
+\v
+\\
+\'
 */
+static void travrse_table(lua_State *L, struct convert_ctx* ctx, int index);
+
 static void trans2escapechar(struct convert_ctx* ctx, const char* str, size_t len) {
     size_t i;
     for (i=0; i<len; i++) {
@@ -176,10 +178,11 @@ tostringvalue(lua_State *L, struct convert_ctx* ctx, int index) {
 
 static void
 travrse_table(lua_State *L, struct convert_ctx* ctx, int index) {
-    int i = 1, first = 0;
+    int64_t i = 1, first = 0;
     add_char(ctx, '{');
+    lua_pushvalue(L, index);
     lua_pushnil(L);
-    while (lua_next(L, index)) {
+    while (lua_next(L, -2) != 0) {
         //-1value -2key
         char comma = ',';
         if (!first) {
@@ -193,7 +196,10 @@ travrse_table(lua_State *L, struct convert_ctx* ctx, int index) {
         } else if (lua_type(L, -2) == LUA_TNUMBER){
             add_char(ctx, comma);
             add_char(ctx, '[');
-            add_string(ctx, lua_tostring(L, -2));
+            int64_t key = lua_tointeger(L, -2);
+            char str[32] = {0};
+            sprintf(str, "%ld", key);
+            add_string(ctx, str);
             add_string(ctx, "]=");
             tostringvalue(L, ctx, -1);
         } else if (lua_type(L, -2) == LUA_TSTRING) {
@@ -218,7 +224,7 @@ lt2ls(lua_State *L) {
     travrse_table(L, &ctx, 1);
     build_string(&ctx);
 
-    lua_pushstring(L, ctx->build_str);
+    lua_pushstring(L, ctx.build_str);
 
     clean_ctx(&ctx);
     return 1;
@@ -228,12 +234,12 @@ lt2ls(lua_State *L) {
 
 int
 luaopen_tabletolua(lua_State *L) {
-	luaL_checkversion(L);
-	luaL_Reg l[] = {
-		{"toluastring",  lt2ls},
-	  	{NULL, NULL}
-	};
-	lua_createtable(L, 0, (sizeof(l)) / sizeof(luaL_Reg) - 1);
-	luaL_setfuncs(L, l, 0);
-	return 1;
+    luaL_checkversion(L);
+    luaL_Reg l[] = {
+        {"toluastring",  lt2ls},
+        {NULL, NULL}
+    };
+    lua_createtable(L, 0, (sizeof(l)) / sizeof(luaL_Reg) - 1);
+    luaL_setfuncs(L, l, 0);
+    return 1;
 }
